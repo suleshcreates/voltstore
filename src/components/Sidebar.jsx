@@ -1,6 +1,7 @@
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, AlertTriangle, MessageCircle, BarChart3, Settings, Zap } from 'lucide-react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Package, ShoppingCart, AlertTriangle, MessageCircle, BarChart3, Settings, Zap, LogOut } from 'lucide-react';
 import useStore from '../store/store';
+import useAuthStore from '../store/authStore';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -14,6 +15,13 @@ const navItems = [
 
 export default function Sidebar() {
   const alertCount = useStore((s) => s.alertCount);
+  const signOut = useAuthStore((s) => s.signOut);
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
   return (
     <aside className="sidebar">
@@ -37,6 +45,24 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      <div style={{ padding: '0 var(--space-sm)', marginTop: 'auto' }}>
+        <button
+          className="btn btn-ghost"
+          onClick={handleSignOut}
+          style={{
+            width: '100%',
+            justifyContent: 'flex-start',
+            padding: 'var(--space-md)',
+            gap: 'var(--space-md)',
+            fontSize: '0.9rem',
+            color: 'var(--muted)',
+          }}
+        >
+          <LogOut size={20} />
+          <span className="nav-label">Sign Out</span>
+        </button>
+      </div>
     </aside>
   );
 }
