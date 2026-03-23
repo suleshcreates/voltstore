@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Zap } from 'lucide-react';
-import { categories } from '../data/mockData';
+
+const categories = ['Circuit Breakers', 'Wires', 'Lighting', 'Switches', 'Accessories', 'Panels', 'Fans'];
 
 export default function Onboarding() {
   const navigate = useNavigate();

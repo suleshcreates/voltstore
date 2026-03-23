@@ -2,7 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Mic } from 'lucide-react';
 import useStore from '../store/store';
 import ChatBubble from '../components/ChatBubble';
-import { quickReplies } from '../data/mockData';
+
+const quickReplies = [
+  "What's low today?",
+  "Top sellers this week?",
+  "Any theft alerts?",
+  "What to reorder?",
+];
 
 const aiResponses = {
   "What's low today?": `Here's your stock status right now:\n\n🔴 Critical (need immediate reorder):\n• MCB 32A Havells — 4 units left (reorder point: 20)\n• 6mm Copper Wire Polycab — 12m left (reorder point: 30m)\n• 3-pin Plug Anchor — 6 units left (reorder point: 30)\n\n⚠️ Warning (running low):\n• 3-pin Socket Anchor — 15 units (reorder at 25)\n• LED Batten 20W Philips — 8 units (reorder at 15)\n\nI'd recommend placing a Havells order first — MCB 32A will likely run out by tomorrow at current sales velocity.`,

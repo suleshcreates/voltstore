@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { UserCircle, Bell, Sliders, CreditCard, Truck, Plus } from 'lucide-react';
 import useStore from '../store/store';
-import { reorderThresholds, suppliers } from '../data/mockData';
+import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
   const whatsappEnabled = useStore((s) => s.whatsappEnabled);
@@ -10,14 +10,21 @@ export default function SettingsPage() {
   const toggleWhatsapp = useStore((s) => s.toggleWhatsapp);
   const toggleSms = useStore((s) => s.toggleSms);
   const toggleEmail = useStore((s) => s.toggleEmail);
+  const reorderThresholds = useStore((s) => s.reorderThresholds);
+  const updateThreshold = useStore((s) => s.updateThreshold);
+  const tenant = useStore((s) => s.tenant);
+  const fetchTenant = useStore((s) => s.fetchTenant);
 
-  const [thresholds, setThresholds] = useState(reorderThresholds);
+  useEffect(() => {
+    if (!tenant) fetchTenant();
+  }, [tenant, fetchTenant]);
 
-  const updateThreshold = (idx, val) => {
-    setThresholds((prev) =>
-      prev.map((t, i) => (i === idx ? { ...t, threshold: Math.max(0, val) } : t))
-    );
-  };
+  // Placeholder suppliers (can be a DB table later)
+  const suppliers = [
+    { id: 1, name: 'Havells Distributor', city: 'Nagpur', phone: '+91 99887 76655' },
+    { id: 2, name: 'Finolex Agency', city: 'Nagpur', phone: '+91 98776 65544' },
+    { id: 3, name: 'Anchor/Panasonic Dealer', city: 'Nagpur', phone: '+91 97665 54433' },
+  ];
 
   return (
     <div style={{ maxWidth: 700 }}>
@@ -30,20 +37,20 @@ export default function SettingsPage() {
         <h3><UserCircle size={18} style={{ verticalAlign: 'middle', marginRight: 8 }} />Shop Profile</h3>
         <div className="form-group">
           <label className="form-label">Shop Name</label>
-          <input className="input" defaultValue="Raju Electricals" />
+          <input className="input" defaultValue={tenant?.shop_name || ''} />
         </div>
         <div className="form-group">
           <label className="form-label">Owner</label>
-          <input className="input" defaultValue="Raju Sharma" />
+          <input className="input" defaultValue={tenant?.owner_name || ''} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
           <div className="form-group">
             <label className="form-label">Phone</label>
-            <input className="input" defaultValue="+91 98765 43210" />
+            <input className="input" defaultValue={tenant?.phone || ''} />
           </div>
           <div className="form-group">
             <label className="form-label">City</label>
-            <input className="input" defaultValue="Nagpur, Maharashtra" />
+            <input className="input" defaultValue={tenant?.city || ''} />
           </div>
         </div>
         <button className="btn btn-primary" style={{ marginTop: 8 }}>Save Changes</button>
@@ -94,36 +101,22 @@ export default function SettingsPage() {
               <th>Category</th>
               <th>Threshold</th>
               <th>Unit</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>
-            {thresholds.map((t, idx) => (
-              <tr key={t.category}>
+            {reorderThresholds.map((t) => (
+              <tr key={t.id}>
                 <td style={{ fontWeight: 500 }}>{t.category}</td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => updateThreshold(idx, t.threshold - 1)}
-                      style={{ padding: '4px 8px' }}
-                    >−</button>
+                    <button className="btn btn-ghost" onClick={() => updateThreshold(t.id, Math.max(0, t.threshold - 1))} style={{ padding: '4px 8px' }}>−</button>
                     <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, minWidth: 30, textAlign: 'center' }}>
                       {t.threshold}
                     </span>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => updateThreshold(idx, t.threshold + 1)}
-                      style={{ padding: '4px 8px' }}
-                    >+</button>
+                    <button className="btn btn-ghost" onClick={() => updateThreshold(t.id, t.threshold + 1)} style={{ padding: '4px 8px' }}>+</button>
                   </div>
                 </td>
                 <td style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{t.unit}</td>
-                <td>
-                  {t.aiRecommended && (
-                    <span style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 500 }}>AI Recommended</span>
-                  )}
-                </td>
               </tr>
             ))}
           </tbody>
@@ -136,10 +129,12 @@ export default function SettingsPage() {
         <div className="setting-row">
           <div className="setting-info">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <span className="setting-label">VoltStore Pro</span>
+              <span className="setting-label">VoltStore {tenant?.plan === 'pro' ? 'Pro' : 'Trial'}</span>
               <span className="tag brand">Active</span>
             </div>
-            <div className="setting-desc">Renews April 22, 2026</div>
+            <div className="setting-desc">
+              {tenant?.trial_ends_at ? `Trial ends ${new Date(tenant.trial_ends_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Active subscription'}
+            </div>
             <div className="setting-desc" style={{ marginTop: 4 }}>Unlimited products · AI alerts · WhatsApp integration · Reports</div>
           </div>
           <button className="btn btn-outline">Manage →</button>

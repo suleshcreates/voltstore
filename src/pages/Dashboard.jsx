@@ -1,9 +1,8 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, AlertTriangle, Package, Crown, MessageCircle } from 'lucide-react';
+import { TrendingUp, AlertTriangle, Crown, MessageCircle } from 'lucide-react';
 import useStore from '../store/store';
 import { useCountUp } from '../hooks/useCountUp';
-import { useRealtime } from '../hooks/useRealtime';
-import { todayStats, topSellersWeek } from '../data/mockData';
 import AlertCard from '../components/AlertCard';
 
 const formatRupee = (n) => '₹' + n.toLocaleString('en-IN');
@@ -12,11 +11,15 @@ export default function Dashboard() {
   const allAlerts = useStore((s) => s.alerts);
   const alerts = allAlerts.slice(0, 3);
   const navigate = useNavigate();
+  const todayStats = useStore((s) => s.todayStats);
+  const topSellersWeek = useStore((s) => s.topSellersWeek);
+  const products = useStore((s) => s.products);
 
   const salesCount = useCountUp(todayStats.sales);
   const stockValue = useCountUp(todayStats.stockValue);
   const lowCount = useCountUp(todayStats.lowStockCount, 600);
-  const liveSales = useRealtime(todayStats.sales, { interval: 10000, variance: 0.02 });
+
+  const topSeller = todayStats.topSeller || { name: '-', brand: '-', revenue: 0 };
 
   return (
     <div>
@@ -31,7 +34,7 @@ export default function Dashboard() {
           <div className="stat-value text-amber rupee">{formatRupee(salesCount)}</div>
           <div className="stat-delta positive">
             <TrendingUp size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-            ↑ 12% vs yesterday
+            Live from Supabase
           </div>
         </div>
         <div className="card">
@@ -42,14 +45,14 @@ export default function Dashboard() {
         <div className="card">
           <div className="stat-label">Stock Value</div>
           <div className="stat-value rupee">{formatRupee(stockValue)}</div>
-          <div className="stat-delta" style={{ color: 'var(--muted)' }}>across 11 products</div>
+          <div className="stat-delta" style={{ color: 'var(--muted)' }}>across {products.length} products</div>
         </div>
         <div className="card">
           <div className="stat-label">Top Seller Today</div>
-          <div className="stat-value" style={{ fontSize: '1.2rem' }}>4mm Copper Wire</div>
+          <div className="stat-value" style={{ fontSize: '1.2rem' }}>{topSeller.name}</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
-            <span className="tag brand">Finolex</span>
-            <span className="text-amber" style={{ fontSize: '0.85rem', fontWeight: 600 }}>{formatRupee(todayStats.topSeller.revenue)}</span>
+            <span className="tag brand">{topSeller.brand}</span>
+            <span className="text-amber" style={{ fontSize: '0.85rem', fontWeight: 600 }}>{formatRupee(topSeller.revenue)}</span>
           </div>
         </div>
       </div>
@@ -62,9 +65,13 @@ export default function Dashboard() {
             <AlertTriangle size={18} className="text-amber" /> AI Insights
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-            {alerts.map((alert) => (
+            {alerts.length > 0 ? alerts.map((alert) => (
               <AlertCard key={alert.id} alert={alert} />
-            ))}
+            )) : (
+              <div className="card" style={{ textAlign: 'center', color: 'var(--muted)', padding: 'var(--space-xl)' }}>
+                No active alerts — everything looks good! ✨
+              </div>
+            )}
           </div>
         </div>
 
@@ -84,7 +91,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {topSellersWeek.map((item) => (
+                {topSellersWeek.length > 0 ? topSellersWeek.map((item) => (
                   <tr key={item.rank}>
                     <td style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: item.rank <= 3 ? 'var(--anchor)' : 'var(--muted)' }}>
                       {item.rank}
@@ -96,7 +103,9 @@ export default function Dashboard() {
                     <td>{item.units}</td>
                     <td className="text-amber rupee">{formatRupee(item.revenue)}</td>
                   </tr>
-                ))}
+                )) : (
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 'var(--space-xl)' }}>No sales data yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>

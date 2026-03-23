@@ -3,7 +3,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { FileText, FileSpreadsheet } from 'lucide-react';
 import AIWhisper from '../components/AIWhisper';
 import useStore from '../store/store';
-import { salesTrend, categoryBreakdown, topSellersWeek } from '../data/mockData';
 
 const formatRupee = (n) => '₹' + n.toLocaleString('en-IN');
 
@@ -17,19 +16,12 @@ const turnoverData = [
   { category: 'Panels', rate: 1.2 },
 ];
 
-const bottomProducts = [
-  { name: 'DB Box 8-way', brand: 'Legrand', units: 2, revenue: 2500 },
-  { name: 'Ceiling Fan 48"', brand: 'Crompton', units: 3, revenue: 8400 },
-  { name: '6mm Wire', brand: 'Polycab', units: 5, revenue: 475 },
-];
-
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
       <div style={{ background: 'var(--black-2)', border: '1px solid var(--black-3)', padding: '8px 12px', borderRadius: 8, fontSize: '0.82rem' }}>
         <div style={{ color: 'var(--off-white)', fontWeight: 500 }}>{label}</div>
         <div style={{ color: 'var(--anchor)', fontWeight: 600 }}>{formatRupee(payload[0].value)}</div>
-        {payload[0].payload.forecast && <div style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>AI Forecast</div>}
       </div>
     );
   }
@@ -38,9 +30,45 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Reports() {
   const whisper = useStore((s) => s.whisperMessages.reports);
+  const topSellersWeek = useStore((s) => s.topSellersWeek);
+  const products = useStore((s) => s.products);
   const [period, setPeriod] = useState('week');
 
-  const totalSales = salesTrend.filter(d => !d.forecast).reduce((s, d) => s + d.sales, 0);
+  // Compute category breakdown from live products
+  const categoryBreakdown = (() => {
+    const catTotals = {};
+    products.forEach(p => {
+      catTotals[p.category] = (catTotals[p.category] || 0) + (p.price * p.stock);
+    });
+    const total = Object.values(catTotals).reduce((s, v) => s + v, 0) || 1;
+    const colors = ['#00FF88', '#F5A623', '#666', '#888', '#444', '#5C9DFF', '#333'];
+    return Object.entries(catTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, val], i) => ({
+        name,
+        value: Math.round((val / total) * 100),
+        color: colors[i % colors.length],
+      }));
+  })();
+
+  // Compute bottom products from live data
+  const bottomProducts = [...products]
+    .sort((a, b) => a.stock - b.stock)
+    .slice(0, 3)
+    .map(p => ({ name: p.name, brand: p.brand, units: p.stock, revenue: p.price * p.stock }));
+
+  // Placeholder sales trend (will be replaced when sales data exists)
+  const salesTrend = [
+    { day: 'Mon', sales: 12400 },
+    { day: 'Tue', sales: 15800 },
+    { day: 'Wed', sales: 18420 },
+    { day: 'Thu', sales: 14200 },
+    { day: 'Fri', sales: 16800 },
+    { day: 'Sat', sales: 21000 },
+    { day: 'Sun', sales: 9500 },
+  ];
+
+  const totalSales = salesTrend.reduce((s, d) => s + d.sales, 0);
 
   return (
     <div>
@@ -71,24 +99,9 @@ export default function Reports() {
               <XAxis dataKey="day" stroke="var(--muted)" fontSize={12} />
               <YAxis stroke="var(--muted)" fontSize={12} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<CustomTooltip />} />
-              <Line
-                type="monotone"
-                dataKey="sales"
-                stroke="var(--anchor)"
-                strokeWidth={2.5}
-                dot={{ fill: 'var(--anchor)', r: 4 }}
-                activeDot={{ r: 6, fill: 'var(--anchor)' }}
-              />
+              <Line type="monotone" dataKey="sales" stroke="var(--anchor)" strokeWidth={2.5} dot={{ fill: 'var(--anchor)', r: 4 }} activeDot={{ r: 6, fill: 'var(--anchor)' }} />
             </LineChart>
           </ResponsiveContainer>
-          <div style={{ display: 'flex', gap: 24, marginTop: 8, fontSize: '0.75rem', color: 'var(--muted)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 12, height: 3, background: 'var(--anchor)', borderRadius: 2 }}></span> Actual
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 12, height: 3, background: 'var(--accent)', borderRadius: 2, borderStyle: 'dashed', borderWidth: 1, borderColor: 'var(--accent)', backgroundColor: 'transparent' }}></span> AI Forecast
-            </span>
-          </div>
         </div>
 
         {/* Category Breakdown */}
@@ -135,7 +148,7 @@ export default function Reports() {
         <div className="report-card">
           <h3>Top 5 Products</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {topSellersWeek.map((item) => (
+            {topSellersWeek.length > 0 ? topSellersWeek.map((item) => (
               <div key={item.rank} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--black-3)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: item.rank <= 3 ? 'var(--anchor)' : 'var(--muted)', fontSize: '1.1rem', width: 24 }}>
@@ -148,7 +161,9 @@ export default function Reports() {
                 </div>
                 <span className="rupee text-amber" style={{ fontWeight: 600, fontSize: '0.87rem' }}>{formatRupee(item.revenue)}</span>
               </div>
-            ))}
+            )) : (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 'var(--space-xl)' }}>No sales data yet — make your first sale!</div>
+            )}
           </div>
         </div>
 
@@ -160,7 +175,7 @@ export default function Reports() {
               <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--black-3)' }}>
                 <div>
                   <div style={{ fontSize: '0.87rem', fontWeight: 500 }}>{item.name}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{item.brand} · {item.units} units sold</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{item.brand} · {item.units} in stock</div>
                 </div>
                 <span className="rupee" style={{ fontSize: '0.87rem', color: 'var(--muted)' }}>{formatRupee(item.revenue)}</span>
               </div>
