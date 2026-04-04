@@ -65,7 +65,8 @@ export default function Onboarding() {
     setError('');
     setIsSubmitting(true);
     try {
-      const res = await fetch('http://localhost:5000/api/auth/onboarding', {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${API_URL}/api/auth/onboarding`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

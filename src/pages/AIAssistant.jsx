@@ -1,27 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Mic } from 'lucide-react';
 import useStore from '../store/store';
+import useAuthStore from '../store/authStore';
 import ChatBubble from '../components/ChatBubble';
 
 const quickReplies = [
-  "What's low today?",
-  "Top sellers this week?",
-  "Any theft alerts?",
-  "What to reorder?",
+  { label: "What's low today?",     msg: "What items are low on stock today?" },
+  { label: "Top sellers this week", msg: "Which items sold the most this week?" },
+  { label: "Any theft alerts?",     msg: "Are there any theft or anomaly alerts?" },
+  { label: "What to reorder?",      msg: "What should I reorder from supplier this week?" },
+  { label: "Today's sales",         msg: "How much did I sell today?" },
+  { label: "Margin check",          msg: "Which products am I discounting too much?" },
 ];
 
-const aiResponses = {
-  "What's low today?": `Here's your stock status right now:\n\n🔴 Critical (need immediate reorder):\n• MCB 32A Havells — 4 units left (reorder point: 20)\n• 6mm Copper Wire Polycab — 12m left (reorder point: 30m)\n• 3-pin Plug Anchor — 6 units left (reorder point: 30)\n\n⚠️ Warning (running low):\n• 3-pin Socket Anchor — 15 units (reorder at 25)\n• LED Batten 20W Philips — 8 units (reorder at 15)\n\nI'd recommend placing a Havells order first — MCB 32A will likely run out by tomorrow at current sales velocity.`,
-  "Top sellers this week?": `This week's top performers:\n\n🥇 4mm Copper Wire (Finolex) — 142 units sold — ₹8,520 revenue\n🥈 MCB 16A (Havells) — 38 units — ₹7,980\n🥉 LED Bulb 9W (Syska) — 55 units — ₹1,925\n4. PVC Tape (Anchor) — 42 units — ₹630\n5. 3-pin Socket (Anchor) — 28 units — ₹980\n\nCopper wire is dominating this week with a 340% velocity spike over its average. Finolex 4mm is on fire.`,
-  "Any theft alerts?": `I detected one anomaly today:\n\n🔍 3-pin Plug (Anchor): 18 units are missing with no matching sale. Last verified count was 24 units, but current inventory shows only 6.\n\nThis could indicate theft or a counting error.\n\nRecommendation: Do a physical count of 3-pin plugs today. If the count confirms 6 units, I'll flag this for your records.`,
-  "What to reorder?": `Based on current stock levels and sales velocity, here's your recommended reorder list:\n\n🔴 Urgent:\n• MCB 32A (Havells) — Order 25 units — runs out tomorrow\n• 3-pin Plug (Anchor) — Order 30 units — critically low\n• 6mm Copper Wire (Polycab) — Order 25m — below reorder point\n\n⚠️ Soon:\n• 3-pin Socket (Anchor) — Order 15 units — approaching reorder\n• LED Batten 20W (Philips) — Order 10 units — ~3 days of stock\n\nEstimated total order value: ₹12,350. Want me to draft a WhatsApp message to your Havells distributor?`,
-};
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function AIAssistant() {
   const messages = useStore((s) => s.messages);
   const addMessage = useStore((s) => s.addMessage);
   const isAiTyping = useStore((s) => s.isAiTyping);
   const setAiTyping = useStore((s) => s.setAiTyping);
+  const tenant = useAuthStore((s) => s.tenant);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
@@ -33,26 +32,45 @@ export default function AIAssistant() {
     scrollToBottom();
   }, [messages, isAiTyping]);
 
-  const sendMessage = (text) => {
-    if (!text.trim()) return;
+  const sendMessage = async (text) => {
+    const msg = text || input.trim();
+    if (!msg || isAiTyping) return;
+
     const now = new Date();
     const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-    addMessage({ id: Date.now(), role: 'user', text, time });
+    addMessage({ id: Date.now(), role: 'user', text: msg, time });
     setInput('');
     setAiTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      setAiTyping(false);
-      const response = aiResponses[text] || `I'm analyzing your inventory data for "${text}". Based on current stock levels:\n\n• Total products: 11\n• Today's sales: ₹18,420\n• Items needing attention: 4\n\nCould you be more specific? I can help with stock levels, reorder suggestions, theft detection, or sales trends.`;
+    try {
+      const res = await fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: msg,
+          tenant_id: tenant?.id,
+        }),
+      });
+
+      const data = await res.json();
+
       addMessage({
         id: Date.now() + 1,
         role: 'ai',
-        text: response,
+        text: data.reply || "Sorry, I couldn't get an answer. Try again.",
         time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
       });
-    }, 1500);
+    } catch {
+      addMessage({
+        id: Date.now() + 1,
+        role: 'ai',
+        text: "Connection issue. Make sure the backend is running.",
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+      });
+    } finally {
+      setAiTyping(false);
+    }
   };
 
   return (
@@ -70,8 +88,8 @@ export default function AIAssistant() {
       {/* Quick Replies */}
       <div className="quick-replies">
         {quickReplies.map((qr) => (
-          <button key={qr} className="quick-reply" onClick={() => sendMessage(qr)}>
-            {qr}
+          <button key={qr.label} className="quick-reply" onClick={() => sendMessage(qr.msg)}>
+            {qr.label}
           </button>
         ))}
       </div>
