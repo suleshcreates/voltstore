@@ -3,19 +3,251 @@ import { supabaseAdmin } from '../supabaseClient.js';
 
 const router = express.Router();
 
-// ── Intent classifier ───────────────────────────────────────────────────
+// ── NLP Intent Classifier ────────────────────────────────────────────────
+// Weighted keyword scoring with fuzzy matching, synonym expansion,
+// multi-word phrase detection, and Hinglish support. Zero-cost, no API.
+
+const INTENT_KEYWORDS = {
+  low_stock: {
+    weight: 1,
+    keywords: [
+      'low', 'stock', 'short', 'shortage', 'finish', 'finished', 'empty',
+      'out', 'running out', 'stock out', 'reorder point', 'below',
+      'less', 'depleted', 'insufficient', 'scarce', 'need more',
+      'not enough', 'remaining', 'left', 'critical stock', 'danger',
+      // Hinglish
+      'khatam', 'kam', 'nahi hai', 'kuch nahi', 'bacha', 'thoda',
+      'kitna bacha', 'stock kam', 'khatam hone wala',
+    ],
+    phrases: [
+      'whats low', 'what is low', 'low stock', 'out of stock', 'running low',
+      'stock status', 'stock check', 'need to order', 'almost finished',
+      'about to finish', 'stock level', 'inventory check', 'inventory status',
+    ],
+  },
+  top_sellers: {
+    weight: 1,
+    keywords: [
+      'top', 'best', 'seller', 'selling', 'sold', 'popular', 'trending',
+      'fast', 'fastest', 'moving', 'hot', 'demand', 'performing',
+      'performer', 'winner', 'highest', 'most', 'maximum', 'rank',
+      // Hinglish
+      'sabse', 'zyada', 'bikta', 'bikne', 'chalte', 'hit',
+    ],
+    phrases: [
+      'top seller', 'best seller', 'most sold', 'fast moving', 'top selling',
+      'best selling', 'highest selling', 'which items sell', 'what sells',
+      'popular items', 'trending items', 'what moved', 'weekly top',
+    ],
+  },
+  anomaly: {
+    weight: 1.2, // higher weight — important alerts
+    keywords: [
+      'theft', 'steal', 'stolen', 'anomaly', 'missing', 'discrepancy',
+      'suspicious', 'mismatch', 'count', 'miscount', 'shrinkage',
+      'pilferage', 'loss', 'unaccounted', 'variance', 'differ',
+      // Hinglish
+      'chori', 'gayab', 'galat', 'gadbad', 'ghotala',
+    ],
+    phrases: [
+      'theft alert', 'any theft', 'stock mismatch', 'something missing',
+      'inventory mismatch', 'stock discrepancy', 'anomaly detected',
+      'suspicious activity', 'stock count', 'physical count',
+    ],
+  },
+  reorder: {
+    weight: 1,
+    keywords: [
+      'reorder', 'order', 'supplier', 'purchase', 'buy', 'procure',
+      'replenish', 'refill', 'restock', 'supply', 'vendor', 'distributor',
+      'wholesale', 'bulk', 'indent',
+      // Hinglish
+      'mangana', 'manga', 'mangwao', 'order karo', 'lena', 'khareed',
+    ],
+    phrases: [
+      'what to order', 'what to reorder', 'reorder list', 'order list',
+      'need to buy', 'purchase list', 'supplier order', 'what should i order',
+      'restock list', 'replenish list',
+    ],
+  },
+  today_sales: {
+    weight: 1,
+    keywords: [
+      'today', 'sales', 'sale', 'revenue', 'income', 'earning',
+      'turnover', 'collection', 'amount', 'business', 'money',
+      // Hinglish
+      'aaj', 'bikri', 'paisa', 'kitna', 'hua', 'kamai', 'karobar',
+    ],
+    phrases: [
+      'today sale', 'todays sale', 'how much sold', 'how much sale',
+      'total sales', 'daily sales', 'today revenue', 'kitna hua',
+      'aaj kitna', 'kitna bikaa', 'sales today', 'today business',
+      'how much did i sell', 'how much i sold', 'total collection',
+    ],
+  },
+  forecast: {
+    weight: 1,
+    keywords: [
+      'forecast', 'predict', 'prediction', 'future', 'next', 'week',
+      'month', 'demand', 'expected', 'projection', 'estimate', 'upcoming',
+      'anticipate', 'outlook', 'plan', 'planning', 'ahead',
+      // Hinglish
+      'aage', 'aane wala', 'agla', 'bhavishya',
+    ],
+    phrases: [
+      'next week', 'next month', 'demand forecast', 'what will sell',
+      'sales forecast', 'predict demand', 'stock forecast', 'run out',
+      'will run out', 'when will', 'going to finish', 'stock prediction',
+    ],
+  },
+  alerts: {
+    weight: 1,
+    keywords: [
+      'alert', 'alerts', 'warning', 'warnings', 'critical', 'urgent',
+      'notification', 'notify', 'issue', 'problem', 'attention',
+      'danger', 'risk', 'flag', 'flagged',
+      // Hinglish
+      'khabar', 'chetawni', 'dikkat', 'samasya',
+    ],
+    phrases: [
+      'any alerts', 'show alerts', 'active alerts', 'what alerts',
+      'any warnings', 'any issues', 'any problems', 'needs attention',
+      'whats wrong', 'any danger',
+    ],
+  },
+  margin: {
+    weight: 1,
+    keywords: [
+      'margin', 'profit', 'discount', 'discounting', 'bargain', 'markup',
+      'cost', 'pricing', 'price', 'loss', 'earning', 'percentage',
+      'undercut', 'cheap', 'expensive',
+      // Hinglish
+      'munafa', 'fayda', 'nuksaan', 'sasta', 'mehnga', 'bachat',
+    ],
+    phrases: [
+      'margin check', 'profit margin', 'discount analysis', 'price analysis',
+      'too much discount', 'where losing', 'losing money', 'most discounted',
+      'am i discounting', 'profit analysis', 'margin analysis',
+    ],
+  },
+  greeting: {
+    weight: 0.8, // lower weight — catch only clear greetings
+    keywords: [
+      'hello', 'hi', 'hey', 'help', 'start', 'menu', 'options',
+      // Hinglish
+      'namaste', 'namaskar', 'kaise', 'kya',
+    ],
+    phrases: [
+      'what can you do', 'kya kar sakte', 'how to use', 'show me',
+      'good morning', 'good evening', 'how are you',
+    ],
+  },
+};
+
+// Generate bigrams for fuzzy matching
+function bigrams(str) {
+  const s = str.toLowerCase();
+  const result = new Set();
+  for (let i = 0; i < s.length - 1; i++) {
+    result.add(s.slice(i, i + 2));
+  }
+  return result;
+}
+
+// Dice coefficient similarity (0-1)
+function similarity(a, b) {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const bigramsA = bigrams(a);
+  const bigramsB = bigrams(b);
+  let intersection = 0;
+  for (const bg of bigramsA) {
+    if (bigramsB.has(bg)) intersection++;
+  }
+  return (2 * intersection) / (bigramsA.size + bigramsB.size);
+}
+
+// Tokenize message into words and n-grams
+function tokenize(message) {
+  const clean = message.toLowerCase().replace(/[?!.,;:'"()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = clean.split(' ');
+  const tokens = [...words];
+  // Add bigrams (2-word phrases)
+  for (let i = 0; i < words.length - 1; i++) {
+    tokens.push(words[i] + ' ' + words[i + 1]);
+  }
+  // Add trigrams (3-word phrases)
+  for (let i = 0; i < words.length - 2; i++) {
+    tokens.push(words[i] + ' ' + words[i + 1] + ' ' + words[i + 2]);
+  }
+  return { words, tokens, fullText: clean };
+}
+
+const FUZZY_THRESHOLD = 0.65;
+const CONFIDENCE_THRESHOLD = 1.5;
+
 function classifyIntent(message) {
-  const m = message.toLowerCase();
-  if (/low|short|finish|khatam|stock out|running out|reorder point/.test(m)) return 'low_stock';
-  if (/top sell|best sell|fast|most sold|popular|trending/.test(m))          return 'top_sellers';
-  if (/theft|anomal|missing|discrepanc|suspicious|chori/.test(m))           return 'anomaly';
-  if (/reorder|order|supplier|purchase|buy|mangana/.test(m))                return 'reorder';
-  if (/today|aaj|sale|revenue|kitna hua|how much/.test(m))                  return 'today_sales';
-  if (/forecast|predict|next week|next month|aage/.test(m))                 return 'forecast';
-  if (/alert|warning|critical|urgent/.test(m))                              return 'alerts';
-  if (/margin|profit|discount|bargain/.test(m))                             return 'margin';
-  if (/hello|hi|namaste|help|kya kar|what can/.test(m))                     return 'greeting';
-  return 'unknown';
+  const { words, tokens, fullText } = tokenize(message);
+  const scores = {};
+
+  for (const [intent, config] of Object.entries(INTENT_KEYWORDS)) {
+    let score = 0;
+
+    // 1. Exact keyword matching
+    for (const keyword of config.keywords) {
+      if (keyword.includes(' ')) {
+        // Multi-word keyword — check in full text
+        if (fullText.includes(keyword)) {
+          score += 2 * config.weight;
+        }
+      } else {
+        // Single-word keyword — check in word list
+        if (words.includes(keyword)) {
+          score += 1.5 * config.weight;
+        }
+      }
+    }
+
+    // 2. Phrase matching (higher bonus)
+    for (const phrase of config.phrases) {
+      if (fullText.includes(phrase)) {
+        score += 3 * config.weight;
+      }
+    }
+
+    // 3. Fuzzy matching for typo tolerance
+    for (const word of words) {
+      if (word.length < 3) continue; // skip tiny words
+      for (const keyword of config.keywords) {
+        if (keyword.includes(' ')) continue; // skip phrase keywords
+        if (keyword.length < 3) continue;
+        const sim = similarity(word, keyword);
+        if (sim >= FUZZY_THRESHOLD && !words.includes(keyword)) {
+          score += sim * config.weight;
+        }
+      }
+    }
+
+    scores[intent] = score;
+  }
+
+  // Find the winner
+  let bestIntent = 'unknown';
+  let bestScore = 0;
+
+  for (const [intent, score] of Object.entries(scores)) {
+    if (score > bestScore) {
+      bestScore = score;
+      bestIntent = intent;
+    }
+  }
+
+  // Require minimum confidence
+  if (bestScore < CONFIDENCE_THRESHOLD) {
+    return 'unknown';
+  }
+
+  return bestIntent;
 }
 
 // ── Answer builders ─────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Zap, Eye, EyeOff, Loader2 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
@@ -7,6 +7,7 @@ export default function Login() {
   const signIn = useAuthStore((s) => s.signIn);
   const authError = useAuthStore((s) => s.authError);
   const clearError = useAuthStore((s) => s.clearError);
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -16,8 +17,11 @@ export default function Login() {
     e.preventDefault();
     clearError();
     setIsSubmitting(true);
-    await signIn(email, password);
+    const result = await signIn(email, password);
     setIsSubmitting(false);
+    if (result?.success) {
+      navigate('/', { replace: true });
+    }
   };
 
   return (
