@@ -57,6 +57,7 @@ const useStore = create((set, get) => ({
           price: Number(p.sell_price),
           priceUnit: p.unit === 'meters' ? '/m' : '',
           status,
+          raw: p,
         };
       });
       set({ products: mapped, isLoadingProducts: false });

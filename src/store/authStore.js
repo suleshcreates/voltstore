@@ -24,7 +24,7 @@ const useAuthStore = create((set, get) => ({
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         set({
           session,
           user: session?.user ?? null,
@@ -33,7 +33,10 @@ const useAuthStore = create((set, get) => ({
         });
 
         if (event === 'SIGNED_IN' && session) {
-          await get().checkOnboardingStatus();
+          // Defer execution to avoid deadlocking the auth client
+          setTimeout(() => {
+            get().checkOnboardingStatus();
+          }, 0);
         }
 
         if (event === 'SIGNED_OUT') {
@@ -55,7 +58,7 @@ const useAuthStore = create((set, get) => ({
       .from('users')
       .select('tenant_id')
       .eq('auth_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!userData || !userData.tenant_id) {
       set({ needsOnboarding: true });
@@ -67,7 +70,7 @@ const useAuthStore = create((set, get) => ({
       .from('tenants')
       .select('shop_name, city')
       .eq('id', userData.tenant_id)
-      .single();
+      .maybeSingle();
 
     const needsSetup = !tenantData || tenantData.shop_name === 'My Shop' || !tenantData.city;
     set({ needsOnboarding: needsSetup });
@@ -145,62 +148,33 @@ const useAuthStore = create((set, get) => ({
     return { success: true };
   },
 
-  // Update tenant + user row after onboarding
+  // Update tenant + user row after onboarding (calls backend API)
   createTenantAndUser: async ({ shopName, ownerName, phone, whatsapp, city, categories }) => {
-    const user = get().user;
-    if (!user) return { success: false, error: 'Not authenticated' };
+    const session = get().session;
+    if (!session) return { success: false, error: 'Not authenticated' };
 
-    // 1. Get the user's generated tenant_id
-    const { data: userData, error: fetchError } = await supabase
-      .from('users')
-      .select('tenant_id')
-      .eq('auth_id', user.id)
-      .single();
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/onboarding', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ shopName, ownerName, phone, whatsapp, city, categories }),
+      });
 
-    if (fetchError || !userData) return { success: false, error: 'Could not find user record' };
-    const tenantId = userData.tenant_id;
+      const data = await res.json();
 
-    // 2. Update tenant
-    const { error: tenantError } = await supabase
-      .from('tenants')
-      .update({
-        shop_name: shopName,
-        owner_name: ownerName,
-        phone,
-        whatsapp: whatsapp || phone,
-        city,
-      })
-      .eq('id', tenantId);
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Onboarding failed' };
+      }
 
-    if (tenantError) return { success: false, error: tenantError.message };
-
-    // 3. Update user row
-    const { error: userError } = await supabase
-      .from('users')
-      .update({
-        name: ownerName,
-        phone,
-      })
-      .eq('auth_id', user.id);
-
-    if (userError) return { success: false, error: userError.message };
-
-    // 4. Update reorder thresholds if customized categories were provided
-    if (categories && categories.length > 0) {
-      // First delete existing thresholds created by trigger
-      await supabase.from('reorder_thresholds').delete().eq('tenant_id', tenantId);
-      
-      const newThresholds = categories.map(cat => ({
-        tenant_id: tenantId,
-        category: cat,
-        threshold: cat === 'Wires' ? 30 : 15,
-        unit: cat === 'Wires' ? 'meters' : 'pcs',
-      }));
-      await supabase.from('reorder_thresholds').insert(newThresholds);
+      set({ needsOnboarding: false });
+      return { success: true };
+    } catch (err) {
+      console.error('Onboarding API error:', err);
+      return { success: false, error: err.message || 'Could not reach server' };
     }
-
-    set({ needsOnboarding: false });
-    return { success: true };
   },
 
   clearError: () => set({ authError: null }),

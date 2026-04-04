@@ -3,6 +3,8 @@ import { Search, Plus } from 'lucide-react';
 import useStore from '../store/store';
 import AIWhisper from '../components/AIWhisper';
 import StockVisual from '../components/StockVisual';
+import AddItemModal from '../components/AddItemModal';
+import EditItemModal from '../components/EditItemModal';
 
 const statusFilters = ['all', 'critical', 'warning', 'healthy', 'hot'];
 
@@ -14,6 +16,8 @@ export default function Inventory() {
   const [activeFilter, setActiveFilter] = useState('all');
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
 
   const filtered = products.filter((p) => {
     const matchesSearch =
@@ -49,7 +53,7 @@ export default function Inventory() {
         <h1 className="page-title">Inventory</h1>
         <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
           <AIWhisper message={whisper} />
-          <button className="btn btn-primary">
+          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
             <Plus size={16} /> Add Item
           </button>
         </div>
@@ -95,7 +99,15 @@ export default function Inventory() {
           </thead>
           <tbody>
             {filtered.map((p) => (
-              <tr key={p.id}>
+              <tr 
+                key={p.id} 
+                className="inventory-row"
+                onClick={(e) => {
+                  if (e.target.tagName !== 'INPUT') {
+                    setEditProduct(p.raw);
+                  }
+                }}
+              >
                 <td style={{ fontWeight: 500 }}>{p.name}</td>
                 <td><span className="tag brand">{p.brand}</span></td>
                 <td><span className="tag category">{p.category}</span></td>
@@ -140,6 +152,17 @@ export default function Inventory() {
       <div style={{ marginTop: 'var(--space-md)', fontSize: '0.82rem', color: 'var(--muted)' }}>
         Showing {filtered.length} of {products.length} items
       </div>
+
+      {showAdd && (
+        <AddItemModal onClose={() => setShowAdd(false)} />
+      )}
+      
+      {editProduct && (
+        <EditItemModal 
+          product={editProduct} 
+          onClose={() => setEditProduct(null)} 
+        />
+      )}
     </div>
   );
 }
