@@ -4,43 +4,42 @@ import { supabase } from '../lib/supabase';
 const useAuthStore = create((set, get) => ({
   user: null,
   session: null,
+  tenant: null,
+  userProfile: null,
   isLoading: true,
   isAuthenticated: false,
   authError: null,
   needsOnboarding: false,
 
-  // Initialize auth listener
+  // Initialize — restore session + listen for auth changes
   initialize: () => {
-    // Check current session
     supabase.auth.getSession().then(({ data: { session } }) => {
       set({
         session,
         user: session?.user ?? null,
         isAuthenticated: !!session,
-        isLoading: false,
       });
-      if (session) get().checkOnboardingStatus();
+      if (session?.user) {
+        get().loadTenant(session.user).finally(() => set({ isLoading: false }));
+      } else {
+        set({ isLoading: false });
+      }
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         set({
           session,
           user: session?.user ?? null,
           isAuthenticated: !!session,
-          isLoading: false,
         });
 
-        if (event === 'SIGNED_IN' && session) {
-          // Defer execution to avoid deadlocking the auth client
-          setTimeout(() => {
-            get().checkOnboardingStatus();
-          }, 0);
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+          setTimeout(() => get().loadTenant(session.user), 0);
         }
 
         if (event === 'SIGNED_OUT') {
-          set({ needsOnboarding: false });
+          set({ tenant: null, userProfile: null, needsOnboarding: false });
         }
       }
     );
@@ -48,42 +47,35 @@ const useAuthStore = create((set, get) => ({
     return () => subscription.unsubscribe();
   },
 
-  // Check if user has completed onboarding (has customized their tenant details)
-  checkOnboardingStatus: async () => {
-    const user = get().user;
-    if (!user) return;
-
-    // 1. Get the user's generated tenant_id
+  // Load tenant + user profile after auth
+  loadTenant: async (authUser) => {
     const { data: userData } = await supabase
       .from('users')
-      .select('tenant_id')
-      .eq('auth_id', user.id)
+      .select('*, tenants(*)')
+      .eq('auth_id', authUser.id)
       .maybeSingle();
 
-    if (!userData || !userData.tenant_id) {
-      set({ needsOnboarding: true });
+    if (!userData) {
+      set({ needsOnboarding: true, tenant: null, userProfile: null });
       return;
     }
 
-    // 2. Check if the tenant has been customized (shop_name isn't default, city isn't empty)
-    const { data: tenantData } = await supabase
-      .from('tenants')
-      .select('shop_name, city')
-      .eq('id', userData.tenant_id)
-      .maybeSingle();
-
-    const needsSetup = !tenantData || tenantData.shop_name === 'My Shop' || !tenantData.city;
-    set({ needsOnboarding: needsSetup });
+    const tenant = userData.tenants;
+    set({
+      userProfile: userData,
+      tenant,
+      needsOnboarding: !tenant?.onboarding_completed,
+    });
   },
 
-  // Sign up with email + password
-  signUp: async (email, password, name) => {
+  // Sign up
+  signUp: async (email, password, ownerName) => {
     set({ authError: null });
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name },
+        data: { owner_name: ownerName },
         emailRedirectTo: `${window.location.origin}/onboarding`,
       },
     });
@@ -92,64 +84,46 @@ const useAuthStore = create((set, get) => ({
       set({ authError: error.message });
       return { success: false, error: error.message };
     }
-
-    return { success: true, data };
+    return { success: true, data, email };
   },
 
-  // Sign in with email + password
+  // Sign in
   signIn: async (email, password) => {
     set({ authError: null });
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       set({ authError: error.message });
       return { success: false, error: error.message };
     }
-
     return { success: true, data };
   },
 
   // Sign out
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ user: null, session: null, isAuthenticated: false, needsOnboarding: false });
+    set({ user: null, session: null, isAuthenticated: false, needsOnboarding: false, tenant: null, userProfile: null });
   },
 
-  // Forgot password
-  resetPassword: async (email) => {
-    set({ authError: null });
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-
-    if (error) {
-      set({ authError: error.message });
-      return { success: false, error: error.message };
+  // Update tenant direct from settings page
+  updateTenantProfile: async (updates) => {
+    const tenantId = get().tenant?.id;
+    if (!tenantId) return { success: false, error: 'No active tenant' };
+    
+    try {
+      const { error } = await supabase.from('tenants').update(updates).eq('id', tenantId);
+      if (error) return { success: false, error: error.message };
+      
+      // Update local state smoothly
+      set({ tenant: { ...get().tenant, ...updates } });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
-
-    return { success: true };
   },
 
-  // Update password (from reset link)
-  updatePassword: async (newPassword) => {
-    set({ authError: null });
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-
-    if (error) {
-      set({ authError: error.message });
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  },
-
-  // Update tenant + user row after onboarding (calls backend API)
-  createTenantAndUser: async ({ shopName, ownerName, phone, whatsapp, city, categories }) => {
+  // Update tenant during onboarding
+  updateTenant: async (updates) => {
     const session = get().session;
     if (!session) return { success: false, error: 'Not authenticated' };
 
@@ -160,21 +134,49 @@ const useAuthStore = create((set, get) => ({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ shopName, ownerName, phone, whatsapp, city, categories }),
+        body: JSON.stringify(updates),
       });
 
       const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Update failed' };
 
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Onboarding failed' };
-      }
-
-      set({ needsOnboarding: false });
+      // Reload tenant
+      if (get().user) await get().loadTenant(get().user);
       return { success: true };
     } catch (err) {
-      console.error('Onboarding API error:', err);
       return { success: false, error: err.message || 'Could not reach server' };
     }
+  },
+
+  // Forgot password
+  resetPassword: async (email) => {
+    set({ authError: null });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) {
+      set({ authError: error.message });
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  },
+
+  // Update password (from reset link)
+  updatePassword: async (newPassword) => {
+    set({ authError: null });
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      set({ authError: error.message });
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  },
+
+  // Resend confirmation email
+  resendConfirmation: async (email) => {
+    const { error } = await supabase.auth.resend({ type: 'signup', email });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   },
 
   clearError: () => set({ authError: null }),

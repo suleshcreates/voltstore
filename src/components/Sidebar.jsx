@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, AlertTriangle, MessageCircle, BarChart3, Settings, Zap, LogOut } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, AlertTriangle, MessageCircle, BarChart3, Settings, Zap, LogOut, History } from 'lucide-react';
 import useStore from '../store/store';
 import useAuthStore from '../store/authStore';
 
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/alerts', icon: AlertTriangle, label: 'AI Alerts', hasBadge: true },
   { to: '/assistant', icon: MessageCircle, label: 'AI Assistant' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
+  { to: '/history', icon: History, label: 'History' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 

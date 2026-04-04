@@ -16,6 +16,7 @@ export default function EditItemModal({ product, onClose, onSaved }) {
     current_stock: product.current_stock ?? '',
     cost_price:    product.cost_price    ?? '',
     sell_price:    product.sell_price    ?? '',
+    min_sell_price: product.min_sell_price ?? '',
     sku:           product.sku           ?? '',
   });
   const [loading, setLoading] = useState(false);
@@ -39,6 +40,7 @@ export default function EditItemModal({ product, onClose, onSaved }) {
           current_stock: parseFloat(form.current_stock) || 0,
           cost_price:    parseFloat(form.cost_price)    || 0,
           sell_price:    parseFloat(form.sell_price)    || 0,
+          min_sell_price: form.min_sell_price ? parseFloat(form.min_sell_price) : null,
           sku:           form.sku.trim() || null,
         })
         .eq('id', product.id);
@@ -92,7 +94,10 @@ export default function EditItemModal({ product, onClose, onSaved }) {
             <Field label="Cost price (₹)" name="cost_price" type="number" value={form.cost_price} onChange={handle} />
             <Field label="Selling price (₹)" name="sell_price" type="number" value={form.sell_price} onChange={handle} />
           </div>
-          <Field label="SKU (optional)" name="sku" value={form.sku} onChange={handle} placeholder="e.g. HVL-MCB-32A" />
+          <div style={row}>
+            <Field label="Minimum price (₹)" name="min_sell_price" type="number" value={form.min_sell_price} onChange={handle} placeholder="Optional" />
+            <Field label="SKU" name="sku" value={form.sku} onChange={handle} placeholder="e.g. HVL-MCB-32A" />
+          </div>
 
           {error && <div style={errorBox}>{error}</div>}
 

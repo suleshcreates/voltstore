@@ -167,35 +167,74 @@ const useStore = create((set, get) => ({
       if (existing) {
         return { cart: state.cart.map((c) => c.id === product.id ? { ...c, qty: c.qty + qty } : c) };
       }
-      return { cart: [...state.cart, { ...product, qty }] };
+      return { cart: [...state.cart, { ...product, qty, actualPrice: product.price }] };
     }),
   removeFromCart: (id) => set((state) => ({ cart: state.cart.filter((c) => c.id !== id) })),
   updateCartQty: (id, qty) => set((state) => ({ cart: state.cart.map((c) => (c.id === id ? { ...c, qty } : c)) })),
+  updateCartPrice: (id, actualPrice) => set((state) => ({
+    cart: state.cart.map((c) => (c.id === id ? { ...c, actualPrice } : c)),
+  })),
   clearCart: () => set({ cart: [] }),
-  getCartTotal: () => get().cart.reduce((sum, c) => sum + c.price * c.qty, 0),
-  completeSale: async (customerPhone) => {
-    const { cart, getCartTotal } = get();
+  getCartTotal: () => get().cart.reduce((sum, c) => sum + (c.actualPrice ?? c.price) * c.qty, 0),
+  getCartMRPTotal: () => get().cart.reduce((sum, c) => sum + c.price * c.qty, 0),
+  completeSale: async (customerPhone, customerName, paymentMethod = 'cash') => {
+    const { cart } = get();
     if (cart.length === 0) return;
-    set({ cart: [] });
 
     const { data: tenant } = await supabase.from('tenants').select('id').limit(1).single();
     if (!tenant) return;
 
-    const total = getCartTotal();
+    // Compute totals
+    const totalMRP = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+    const finalTotal = cart.reduce((sum, c) => sum + (c.actualPrice ?? c.price) * c.qty, 0);
+    const totalDiscount = totalMRP - finalTotal;
+    const estimatedMargin = cart.reduce((sum, c) => {
+      const costPrice = Number(c.raw?.cost_price ?? 0);
+      const unitPrice = c.actualPrice ?? c.price;
+      return sum + (unitPrice - costPrice) * c.qty;
+    }, 0);
+
     const { data: sale } = await supabase.from('sales').insert({
-      tenant_id: tenant.id, customer_phone: customerPhone, total, subtotal: total,
+      tenant_id: tenant.id,
+      customer_phone: customerPhone,
+      customer_name: customerName,
+      subtotal: parseFloat(totalMRP.toFixed(2)),
+      total: parseFloat(finalTotal.toFixed(2)),
+      total_mrp: parseFloat(totalMRP.toFixed(2)),
+      total_discount: parseFloat(totalDiscount.toFixed(2)),
+      margin_amount: parseFloat(estimatedMargin.toFixed(2)),
+      payment_method: paymentMethod,
+      whatsapp_sent: false,
     }).select().single();
 
     if (sale) {
-      const items = cart.map(c => ({
-        sale_id: sale.id, product_id: c.id, quantity: c.qty, unit_price: c.price, total: c.price * c.qty,
-      }));
+      const items = cart.map(c => {
+        const mrp = c.price;
+        const unitPrice = c.actualPrice ?? c.price;
+        const discountAmt = mrp - unitPrice;
+        const discountPct = mrp > 0 ? (discountAmt / mrp) * 100 : 0;
+        const lineTotal = unitPrice * c.qty;
+        return {
+          sale_id: sale.id,
+          product_id: c.id,
+          quantity: c.qty,
+          mrp: parseFloat(mrp.toFixed(2)),
+          unit_price: parseFloat(unitPrice.toFixed(2)),
+          discount_amount: parseFloat(discountAmt.toFixed(2)),
+          discount_pct: parseFloat(discountPct.toFixed(2)),
+          total: parseFloat(lineTotal.toFixed(2)),
+        };
+      });
       await supabase.from('sale_items').insert(items);
+
+      // Deduct stock
       for (const c of cart) {
         const { data: p } = await supabase.from('products').select('current_stock').eq('id', c.id).single();
         if (p) await supabase.from('products').update({ current_stock: Number(p.current_stock) - c.qty }).eq('id', c.id);
       }
       get().fetchTodayStats();
+      
+      return sale; // Return sale for invoice generation (do not clear cart here)!
     }
   },
 

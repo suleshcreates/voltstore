@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { UserCircle, Bell, Sliders, CreditCard, Truck, Plus } from 'lucide-react';
 import useStore from '../store/store';
+import useAuthStore from '../store/authStore';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
@@ -14,10 +15,33 @@ export default function SettingsPage() {
   const updateThreshold = useStore((s) => s.updateThreshold);
   const tenant = useStore((s) => s.tenant);
   const fetchTenant = useStore((s) => s.fetchTenant);
+  const updateTenantProfile = useAuthStore((s) => s.updateTenantProfile);
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    shop_name: '',
+    owner_name: '',
+    phone: '',
+    city: ''
+  });
 
   useEffect(() => {
     if (!tenant) fetchTenant();
+    else {
+      setProfileForm({
+        shop_name: tenant.shop_name || '',
+        owner_name: tenant.owner_name || '',
+        phone: tenant.phone || '',
+        city: tenant.city || ''
+      });
+    }
   }, [tenant, fetchTenant]);
+
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
+    await updateTenantProfile(profileForm);
+    setIsSaving(false);
+  };
 
   // Placeholder suppliers (can be a DB table later)
   const suppliers = [
@@ -37,23 +61,25 @@ export default function SettingsPage() {
         <h3><UserCircle size={18} style={{ verticalAlign: 'middle', marginRight: 8 }} />Shop Profile</h3>
         <div className="form-group">
           <label className="form-label">Shop Name</label>
-          <input className="input" defaultValue={tenant?.shop_name || ''} />
+          <input className="input" value={profileForm.shop_name} onChange={(e) => setProfileForm({ ...profileForm, shop_name: e.target.value })} />
         </div>
         <div className="form-group">
           <label className="form-label">Owner</label>
-          <input className="input" defaultValue={tenant?.owner_name || ''} />
+          <input className="input" value={profileForm.owner_name} onChange={(e) => setProfileForm({ ...profileForm, owner_name: e.target.value })} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
           <div className="form-group">
             <label className="form-label">Phone</label>
-            <input className="input" defaultValue={tenant?.phone || ''} />
+            <input className="input" value={profileForm.phone} onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} />
           </div>
           <div className="form-group">
             <label className="form-label">City</label>
-            <input className="input" defaultValue={tenant?.city || ''} />
+            <input className="input" value={profileForm.city} onChange={(e) => setProfileForm({ ...profileForm, city: e.target.value })} />
           </div>
         </div>
-        <button className="btn btn-primary" style={{ marginTop: 8 }}>Save Changes</button>
+        <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleSaveProfile} disabled={isSaving}>
+          {isSaving ? 'Saving...' : 'Save Changes'}
+        </button>
       </div>
 
       {/* Notifications */}

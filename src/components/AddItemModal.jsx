@@ -11,7 +11,7 @@ const UNITS = ['pcs', 'meters', 'boxes', 'rolls', 'sets', 'pairs'];
 const empty = {
   name: '', brand: '', category: 'Circuit Breakers',
   unit: 'pcs', current_stock: '',
-  cost_price: '', sell_price: '', sku: '',
+  cost_price: '', sell_price: '', min_sell_price: '', sku: '',
 };
 
 export default function AddItemModal({ onClose, onSaved }) {
@@ -56,6 +56,7 @@ export default function AddItemModal({ onClose, onSaved }) {
         reorder_point: 0, // removed from UI per user request
         cost_price: parseFloat(form.cost_price) || 0,
         sell_price: parseFloat(form.sell_price) || 0,
+        min_sell_price: form.min_sell_price ? parseFloat(form.min_sell_price) : null,
         sku: form.sku.trim() || null,
       });
 
@@ -115,9 +116,13 @@ export default function AddItemModal({ onClose, onSaved }) {
               value={form.sell_price} onChange={handle} placeholder="0" />
           </div>
 
-          {/* SKU */}
-          <Field label="SKU / Product code (optional)" name="sku"
-            value={form.sku} onChange={handle} placeholder="e.g. HVL-MCB-32A" />
+          {/* Min price + SKU */}
+          <div style={s.row}>
+            <Field label="Minimum price (₹)" name="min_sell_price" type="number"
+              value={form.min_sell_price} onChange={handle} placeholder="Optional" />
+            <Field label="SKU / Product code" name="sku"
+              value={form.sku} onChange={handle} placeholder="e.g. HVL-MCB-32A" />
+          </div>
 
           {error && <div style={s.error}>{error}</div>}
 
